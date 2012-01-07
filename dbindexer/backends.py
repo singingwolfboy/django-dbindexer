@@ -25,7 +25,7 @@ class BaseResolver(object):
         if not field_to_index:
             return 
         
-        index_field = lookup.get_field_to_add(field_to_index)        
+        index_field = lookup.get_field_to_add(field_to_index)
         config_field = index_field.item_field if \
             isinstance(index_field, ListField) else index_field  
         if hasattr(field_to_index, 'max_length') and \
@@ -160,19 +160,19 @@ class FKNullFix(BaseResolver):
     It becomes a JOIN with pk__isnull which won't work on nonrel DBs,
     so we rewrite the JOIN here.
     """
-     
+
     def create_index(self, lookup):
         pass
-    
+
     def convert_insert_query(self, query):
         pass
-    
+
     def convert_filter(self, query, filters, child, index):
         constraint, lookup_type, annotation, value = child
         if constraint.field is not None and lookup_type == 'isnull' and \
                         isinstance(constraint.field, models.ForeignKey):
             self.fix_fk_null_filter(query, constraint)
-   
+
     def fix_fk_null_filter(self, query, constraint):
         alias = constraint.alias
         table_name = query.alias_map[alias][TABLE_NAME]

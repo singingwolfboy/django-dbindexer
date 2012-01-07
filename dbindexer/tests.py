@@ -14,7 +14,7 @@ import re
 class ForeignIndexed2(models.Model):
     name_fi2 = models.CharField(max_length=500)
     age = models.IntegerField()
-   
+
 class ForeignIndexed(models.Model):
     title = models.CharField(max_length=500)
     name_fi = models.CharField(max_length=500)
@@ -212,6 +212,10 @@ class TestIndexed(TestCase):
         self.assertEqual(4, len(Indexed.objects.all().filter(published__year=now.year)))
         self.assertEqual(4, len(Indexed.objects.all().filter(
             published__week_day=now.isoweekday())))
+
+    def test_null_strings(self):
+        """Test indexing with nullable CharFields, see: https://github.com/django-nonrel/django-dbindexer/issues/3."""
+        NullableCharField.objects.create()
 
 #    def test_contains(self):
 #        # passes on production but not on gae-sdk (development)
