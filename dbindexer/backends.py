@@ -3,10 +3,10 @@ from django.db.models.fields import FieldDoesNotExist
 from django.db.models.sql.constants import JOIN_TYPE, LHS_ALIAS, LHS_JOIN_COL, \
     TABLE_NAME, RHS_JOIN_COL
 from django.utils.tree import Node
-from djangotoolbox.fields import ListField
-from .lookups import StandardLookup
 
-OR = 'OR'
+from .lookups import StandardLookup
+from djangotoolbox.fields import ListField
+
 
 # TODO: optimize code
 class BaseResolver(object):
@@ -16,7 +16,7 @@ class BaseResolver(object):
         # mapping from column names to field names
         self.column_to_name = {}
         
-    ''' API called by resolver''' 
+    # API called by resolver.
     
     def create_index(self, lookup):
         field_to_index = self.get_field_to_index(lookup.model, lookup.field_name)
@@ -47,8 +47,7 @@ class BaseResolver(object):
                 self.add_column_to_name(lookup.model, lookup.field_name)
                 
     def convert_insert_query(self, query):
-        '''Converts a database saving query.'''
-        
+        """Converts a database saving query."""
         for lookup in self.index_map.keys():
             self._convert_insert_query(query, lookup)
     
@@ -67,7 +66,7 @@ class BaseResolver(object):
     def convert_filters(self, query):
         self._convert_filters(query, query.where)
 
-    ''' helper methods '''
+    # Helper methods.
     
     def _convert_filters(self, query, filters):
         for index, child in enumerate(filters.children[:]):
@@ -133,26 +132,34 @@ class BaseResolver(object):
                 return index
         return None
 
-def unref_alias(query, alias):
-    table_name = query.alias_map[alias][TABLE_NAME]
-    query.alias_refcount[alias] -= 1
-    if query.alias_refcount[alias] < 1:
-        # Remove all information about the join
-        del query.alias_refcount[alias]
-        del query.join_map[query.rev_join_map[alias]]
-        del query.rev_join_map[alias]
-        del query.alias_map[alias]
-        query.table_map[table_name].remove(alias)
-        if len(query.table_map[table_name]) == 0:
-            del query.table_map[table_name]
-        query.used_aliases.discard(alias)
+    def unref_alias(self, query, alias):
+        """
+        Remove query dependence on a column.
+
+        TODO: It should be enough to just decrease the reference count, as columns with 0 references are supposed to be ignored?
+        """
+        if query.alias_refcount[alias] > 0:
+            query.alias_refcount[alias] -= 1
+
+            # Remove all information about the join.
+            if query.alias_refcount[alias] == 0:
+                table_name = query.alias_map[alias][TABLE_NAME]
+                del query.alias_refcount[alias]
+                del query.join_map[query.rev_join_map[alias]]
+                del query.rev_join_map[alias]
+                del query.alias_map[alias]
+                query.table_map[table_name] = [t for t in query.table_map[table_name] if t != alias] # We need a copy here -- lists in table_map may be reused.
+                if len(query.table_map[table_name]) == 0:
+                    del query.table_map[table_name]
+                    query.tables.remove(table_name)
+                query.used_aliases.discard(alias)
 
 class FKNullFix(BaseResolver):
-    '''
-        Django doesn't generate correct code for ForeignKey__isnull.
-        It becomes a JOIN with pk__isnull which won't work on nonrel DBs,
-        so we rewrite the JOIN here.
-    '''
+    """
+    Django doesn't generate correct code for ForeignKey__isnull.
+    It becomes a JOIN with pk__isnull which won't work on nonrel DBs,
+    so we rewrite the JOIN here.
+    """
      
     def create_index(self, lookup):
         pass
@@ -165,10 +172,7 @@ class FKNullFix(BaseResolver):
         if constraint.field is not None and lookup_type == 'isnull' and \
                         isinstance(constraint.field, models.ForeignKey):
             self.fix_fk_null_filter(query, constraint)
-            
-    def unref_alias(self, query, alias):
-        unref_alias(query, alias)
-            
+   
     def fix_fk_null_filter(self, query, constraint):
         alias = constraint.alias
         table_name = query.alias_map[alias][TABLE_NAME]
@@ -182,9 +186,8 @@ class FKNullFix(BaseResolver):
         if not next_alias:
             return
         self.unref_alias(query, alias)
-        alias = next_alias
         constraint.col = constraint.field.column
-        constraint.alias = alias
+        constraint.alias = next_alias
 
 class ConstantFieldJOINResolver(BaseResolver):
     def create_index(self, lookup):
@@ -192,8 +195,7 @@ class ConstantFieldJOINResolver(BaseResolver):
             super(ConstantFieldJOINResolver, self).create_index(lookup)
     
     def convert_insert_query(self, query):
-        '''Converts a database saving query.'''
-        
+        """Converts a database saving query."""
         for lookup in self.index_map.keys():
             if '__' in lookup.field_name:
                 self._convert_insert_query(query, lookup)
@@ -269,9 +271,6 @@ class ConstantFieldJOINResolver(BaseResolver):
             column_chain += model._meta.get_field(name).column + '__'
         self.column_to_name[column_chain[:-2]] = field_name
         
-    def unref_alias(self, query, alias):
-        unref_alias(query, alias)
-        
     def get_column_index(self, query, constraint):
         if constraint.field:
             column_chain = constraint.field.column
@@ -331,7 +330,7 @@ class InMemoryJOINResolver(ConstantFieldJOINResolver):
         
     def _convert_filters(self, query, filters):
         # or queries are not supported for in-memory-JOINs
-        if self.contains_OR(query.where, OR):
+        if self.contains_OR(query.where, 'OR'):
             return
         
         # start with the deepest JOIN level filter!
@@ -431,8 +430,10 @@ class InMemoryJOINResolver(ConstantFieldJOINResolver):
         lookup.update(lookup_updates)
                 
     def remove_child(self, filters, to_remove):
-        ''' Removes a child object from filters. If filters doesn't contain
-            children afterwoods, filters will be removed from its parent. '''
+        """
+        Removes a child object from filters. If filters doesn't contain
+        children afterwoods, filters will be removed from its parent.
+        """
             
         for child in filters.children[:]:
             if child is to_remove:
@@ -453,7 +454,7 @@ class InMemoryJOINResolver(ConstantFieldJOINResolver):
         filters.children = result
     
     def get_all_field_chains(self, query, filters):
-        ''' Returns a dict mapping from field_chains to the corresponding child.'''
+        """Returns a dict mapping from field_chains to the corresponding child."""
 
         field_chains = {}
         all_filters = self.get_all_filters(filters)

@@ -1,5 +1,9 @@
+import datetime
+import re
+
 from django.db import models
 from django.test import TestCase
+
 from .api import register_index
 from .lookups import StandardLookup
 from .resolver import resolver 
@@ -10,7 +14,7 @@ import re
 class ForeignIndexed2(models.Model):
     name_fi2 = models.CharField(max_length=500)
     age = models.IntegerField()
-    
+   
 class ForeignIndexed(models.Model):
     title = models.CharField(max_length=500)
     name_fi = models.CharField(max_length=500)
@@ -209,11 +213,6 @@ class TestIndexed(TestCase):
         self.assertEqual(4, len(Indexed.objects.all().filter(
             published__week_day=now.isoweekday())))
 
-    def test_null_strings(self):
-        """Test indexing with nullable CharFields, see: https://github.com/django-nonrel/django-dbindexer/issues/3."""
-        NullableCharField.objects.create()
-
-
 #    def test_contains(self):
 #        # passes on production but not on gae-sdk (development)
 #        self.assertEqual(1, len(Indexed.objects.all().filter(name__contains='Aim')))
@@ -223,3 +222,28 @@ class TestIndexed(TestCase):
 #
 #        # test icontains on a list
 #        self.assertEqual(2, len(Indexed.objects.all().filter(tags__icontains='RA')))
+
+class FKNullFixTest(TestCase):
+    def test_basic(self):
+        class Parent(models.Model):
+            pass
+        class Child(models.Model):
+            parent = models.ForeignKey(Parent, null=True)
+        parent = Parent.objects.create()
+        child1 = Child.objects.create(parent=parent)
+        child2 = Child.objects.create(parent=None)
+        self.assertEqual(len(Child.objects.filter(parent=parent)), 1)
+        self.assertEqual(len(Child.objects.filter(parent=None)), 1)
+
+    def test_double_slices(self):
+        """
+        Check that running the fix does not break internal queryset data, by forcing it to run twice in a specific way.
+        See: https://github.com/django-nonrel/django-dbindexer/issues/7.
+        """
+        class Parent(models.Model):
+            pass
+        class Child(models.Model):
+            parent = models.ForeignKey(Parent, null=True)
+        queryset = Child.objects.filter(parent=None)
+        list(queryset[:500])
+        list(queryset[:500])
