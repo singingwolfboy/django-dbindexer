@@ -5,18 +5,29 @@ except ImportError:
 from django.conf import settings
 from django.utils.importlib import import_module
 
-def merge_dicts(d1, d2):
-    '''Update dictionary recursively.'''
+def merge_dicts(*dicts):
+    """
+    Return a new dictionary that is the result of merging the arguments together.
+    In case of conflicts, later arguments take precedence over earlier arguments.
+    """
+    updated = {}
+    # grab all keys
+    keys = set()
+    for d in dicts:
+        keys = keys.union(set(d))
 
-    for k, v in d2.iteritems():
-
-        # Only merge if the key exists in both dictionaries and both values are dictionary-like.
-        if k in d1 and isinstance(v, Mapping) and isinstance(d1[k], Mapping):
-            merge_dicts(d1[k], v)
-
-        # Otherwise just overwrite the original value (if any).
+    for key in keys:
+        values = [d[key] for d in dicts if key in d]
+        # which ones are mapping types? (aka dict)
+        maps = [value for value in values if isinstance(value, Mapping)]
+        if maps:
+            # if we have any mapping types, call recursively to merge them
+            updated[key] = merge_dicts(*maps)
         else:
-            d1[k] = v
+            # otherwise, just grab the last value we have, since later arguments
+            # take precedence over earlier arguments
+            updated[key] = values[-1]
+    return updated
 
 class DatabaseOperations(object):
     dbindexer_compiler_module = __name__.rsplit('.', 1)[0] + '.compiler'
@@ -50,6 +61,6 @@ def DatabaseWrapper(settings_dict, *args, **kwargs):
         pass
 
     # Update settings with target database settings (which can contain nested dicts).
-    merge_dicts(settings_dict, target_settings)
+    merged = merge_dicts(settings_dict, target_settings)
 
-    return Wrapper(settings_dict, *args, **kwargs)
+    return Wrapper(merged, *args, **kwargs)
