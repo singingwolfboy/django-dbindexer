@@ -1,4 +1,7 @@
-from collections import Mapping
+try:
+    from collections import Mapping
+except ImportError:
+    Mapping = dict
 from django.conf import settings
 from django.utils.importlib import import_module
 
